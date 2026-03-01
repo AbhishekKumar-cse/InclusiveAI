@@ -85,22 +85,32 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
     const flaggedForReview = newRiskScore >= 31; 
     const humanHandoffTriggered = newRiskScore >= 71; 
 
-    // Correctly mapping history for Genkit 1.x (using 'content' property)
+    // Robust history cleaning for Gemini: MUST alternate user/model and start with user
     let historyForModel: any[] = [];
     input.chatHistory.forEach((m) => {
+      if (!m.content || m.content.trim() === '') return;
       const role = m.role === 'assistant' ? 'model' : 'user';
-      const lastMessage = historyForModel[historyForModel.length - 1];
       
+      const lastMessage = historyForModel[historyForModel.length - 1];
       if (!lastMessage || lastMessage.role !== role) {
         historyForModel.push({
           role: role,
           content: [{ text: m.content }],
         });
+      } else {
+        // Concatenate if consecutive roles detected to keep alternating pattern
+        lastMessage.content[0].text += '\n' + m.content;
       }
     });
 
-    if (historyForModel.length > 0 && historyForModel[0].role === 'model') {
-      historyForModel = historyForModel.slice(1);
+    // Ensure history starts with 'user'
+    while (historyForModel.length > 0 && historyForModel[0].role !== 'user') {
+      historyForModel.shift();
+    }
+    
+    // Ensure history ends with 'model' so the next message (prompt) is 'user'
+    if (historyForModel.length > 0 && historyForModel[historyForModel.length - 1].role !== 'model') {
+      historyForModel.pop();
     }
 
     let aiResponse = "I'm here for you, but I'm having a little trouble connecting right now. Please tell me more about how you're feeling.";
@@ -108,7 +118,7 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
       const aiResponseGen = await ai.generate({
         model: 'googleai/gemini-1.5-flash',
         system: WELNESSBOT_SYSTEM_INSTRUCTION,
-        history: historyForModel,
+        history: historyForModel.length > 0 ? historyForModel : undefined,
         prompt: input.message,
         config: {
           safetySettings: [
@@ -120,8 +130,9 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
         }
       });
       aiResponse = aiResponseGen.text || aiResponse;
-    } catch (e) {
+    } catch (e: any) {
       console.error('WellnessBot generation failed:', e);
+      // Fallback message is already set
     }
 
     return {

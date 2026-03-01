@@ -1,8 +1,7 @@
-
 "use client";
 
 import { AppSidebar } from "@/components/layout/Sidebar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +11,6 @@ import {
   AlertTriangle, 
   Sparkles, 
   User, 
-  MessageCircle,
   Building2,
   Phone,
   Info
@@ -20,15 +18,20 @@ import {
 import { useState, useRef, useEffect } from "react";
 import { chatWithWellnessBot } from "@/ai/flows/wellness-bot-chat-with-distress-detection-flow";
 import { useToast } from "@/hooks/use-toast";
+import { useUser, useFirestore } from "@/firebase";
+import { doc, setDoc, updateDoc, arrayUnion, serverTimestamp } from "firebase/firestore";
 
 export default function WellnessPage() {
   const { toast } = useToast();
+  const { user } = useUser();
+  const db = useFirestore();
   const [messages, setMessages] = useState<any[]>([
     { role: 'assistant', content: "Hi! I'm WellnessBot, your 24/7 wellbeing companion. I'm here to listen, support, and connect you with resources. Remember: I'm not a doctor, but I care about how you're doing. What's on your mind today?" }
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [riskLevel, setRiskLevel] = useState<number>(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,6 +40,30 @@ export default function WellnessPage() {
     }
   }, [messages]);
 
+  // Initialize a chat session in Firestore if user is logged in
+  useEffect(() => {
+    if (user && !sessionId && db) {
+      const newSessionId = `wellness-${user.uid}-${Date.now()}`;
+      setSessionId(newSessionId);
+      
+      const sessionRef = doc(db, "chatSessions", newSessionId);
+      setDoc(sessionRef, {
+        id: newSessionId,
+        userId: user.uid,
+        module: "wellness",
+        messages: [{
+          role: "assistant",
+          content: messages[0].content,
+          timestamp: new Date().toISOString()
+        }],
+        riskLevel: "low",
+        humanHandoffTriggered: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }).catch(console.error);
+    }
+  }, [user, db, sessionId]);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -44,8 +71,18 @@ export default function WellnessPage() {
     setInput("");
     setIsLoading(true);
 
-    const newMessages = [...messages, { role: 'user', content: userMessage }];
+    const userMsgObj = { role: 'user', content: userMessage, timestamp: new Date().toISOString() };
+    const newMessages = [...messages, userMsgObj];
     setMessages(newMessages);
+
+    // Sync user message to Firestore
+    if (sessionId && db) {
+      const sessionRef = doc(db, "chatSessions", sessionId);
+      updateDoc(sessionRef, {
+        messages: arrayUnion(userMsgObj),
+        updatedAt: serverTimestamp()
+      }).catch(console.error);
+    }
 
     try {
       const response = await chatWithWellnessBot({
@@ -54,8 +91,45 @@ export default function WellnessPage() {
         userLanguage: "en"
       });
 
-      setMessages([...newMessages, { role: 'assistant', content: response.aiResponse }]);
+      const assistantMsgObj = { 
+        role: 'assistant', 
+        content: response.aiResponse, 
+        timestamp: new Date().toISOString(),
+        riskScore: response.newRiskScore,
+        flaggedForReview: response.flaggedForReview
+      };
+      
+      setMessages([...newMessages, assistantMsgObj]);
       setRiskLevel(response.newRiskScore);
+
+      // Log interaction and mood log to Firestore
+      if (user && db) {
+        // Sync assistant response to Firestore
+        if (sessionId) {
+          const sessionRef = doc(db, "chatSessions", sessionId);
+          updateDoc(sessionRef, {
+            messages: arrayUnion(assistantMsgObj),
+            riskLevel: response.newRiskScore > 70 ? "high" : response.newRiskScore > 30 ? "medium" : "low",
+            humanHandoffTriggered: response.humanHandoffTriggered,
+            updatedAt: serverTimestamp()
+          }).catch(console.error);
+        }
+
+        // Create a MoodLog entry
+        const moodLogId = `log-${Date.now()}`;
+        const moodLogRef = doc(db, "users", user.uid, "moodLogs", moodLogId);
+        setDoc(moodLogRef, {
+          id: moodLogId,
+          userId: user.uid,
+          date: new Date().toISOString().split('T')[0],
+          moodScore: response.newRiskScore > 70 ? 1 : response.newRiskScore > 30 ? 3 : 5,
+          moodEmoji: response.newRiskScore > 70 ? '😢' : response.newRiskScore > 30 ? '😐' : '😊',
+          note: userMessage,
+          aiNudgeSent: true,
+          nudgeContent: response.aiResponse,
+          timestamp: new Date().toISOString()
+        }).catch(console.error);
+      }
 
       if (response.humanHandoffTriggered) {
         toast({
