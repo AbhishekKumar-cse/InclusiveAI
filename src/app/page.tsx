@@ -3,14 +3,11 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { 
   Eye, 
   Heart, 
   MapPin, 
   Palette, 
-  Globe, 
-  Users, 
   Zap,
   ArrowRight,
   Hexagon
@@ -98,7 +95,6 @@ export default function LandingPage() {
           <p className="text-muted-foreground max-w-2xl mx-auto">Four core modules designed to make your campus truly accessible for every individual.</p>
         </div>
         <div className="grid md:grid-cols-2 gap-8">
-          {/* AccessAssist */}
           <Card className="glass group hover:border-accent/50 transition-all duration-300">
             <CardContent className="p-8 space-y-6">
               <div className="w-14 h-14 bg-access-blue/10 rounded-2xl flex items-center justify-center border border-access-blue/20">
@@ -114,7 +110,6 @@ export default function LandingPage() {
             </CardContent>
           </Card>
 
-          {/* WellnessCompanion */}
           <Card className="glass group hover:border-wellness-purple/50 transition-all duration-300">
             <CardContent className="p-8 space-y-6">
               <div className="w-14 h-14 bg-wellness-purple/10 rounded-2xl flex items-center justify-center border border-wellness-purple/20">
@@ -130,7 +125,6 @@ export default function LandingPage() {
             </CardContent>
           </Card>
 
-          {/* CrisisRadar */}
           <Card className="glass group hover:border-crisis-red/50 transition-all duration-300">
             <CardContent className="p-8 space-y-6">
               <div className="w-14 h-14 bg-crisis-red/10 rounded-2xl flex items-center justify-center border border-crisis-red/20">
@@ -146,7 +140,6 @@ export default function LandingPage() {
             </CardContent>
           </Card>
 
-          {/* InclusionKit */}
           <Card className="glass group hover:border-teal-300/50 transition-all duration-300">
             <CardContent className="p-8 space-y-6">
               <div className="w-14 h-14 bg-teal-300/10 rounded-2xl flex items-center justify-center border border-teal-300/20">

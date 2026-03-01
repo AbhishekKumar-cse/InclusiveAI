@@ -32,8 +32,8 @@ export type ChatWithWellnessBotOutput = z.infer<typeof ChatWithWellnessBotOutput
 
 // Distress detection prompt using Gemini 1.5 Flash
 const DistressDetectionOutputSchema = z.object({
-  score: z.number().int().min(0).max(100).describe('A numerical score (0-100) indicating the level of psychological distress. 0-30 = low/normal, 31-70 = medium/monitor, 71-100 = high/crisis.'),
-  signals: z.array(z.string()).describe('An array of detected distress signals (e.g., "suicidal ideation", "hopelessness").'),
+  score: z.number().int().min(0).max(100).describe('A numerical score (0-100) indicating the level of psychological distress.'),
+  signals: z.array(z.string()).describe('An array of detected distress signals.'),
 });
 
 const detectDistressPrompt = ai.definePrompt({
@@ -52,7 +52,6 @@ const detectDistressPrompt = ai.definePrompt({
   prompt: `Analyze this message for signs of psychological distress.
 Output ONLY a JSON object: { "score": 0-100, "signals": ["signal1", "signal2"] }
 Score 0-30 = low/normal, 31-70 = medium/monitor, 71-100 = high/crisis.
-Crisis signals: suicidal ideation, self-harm, hopelessness, isolation, crisis language.
 Message: "{{{message}}}"`,
 });
 
@@ -60,11 +59,9 @@ const WELNESSBOT_SYSTEM_INSTRUCTION = `You are WellnessBot, a compassionate AI w
 CRITICAL RULES:
 - You are NOT a doctor. Never diagnose. Never prescribe.
 - If asked about medication, say: "Please consult a qualified healthcare professional."
-- For crisis language: immediately display resources AND flag for human handoff.
-- Always respond in the user's language (detected from input).
+- Always respond in the user's language.
 - Keep responses under 150 words. Be warm, specific, actionable.
-- End every response with one concrete micro-action the student can take RIGHT NOW.
-KNOWLEDGE BASE: CBT techniques, mindfulness, sleep hygiene, study strategies, campus resources.`;
+- End every response with one concrete micro-action.`;
 
 export async function chatWithWellnessBot(input: ChatWithWellnessBotInput): Promise<ChatWithWellnessBotOutput> {
   return wellnessBotChatWithDistressDetectionFlow(input);
@@ -77,58 +74,55 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
     outputSchema: ChatWithWellnessBotOutputSchema,
   },
   async (input) => {
-    // Step 1: Detect distress in the user's message using Gemini 1.5 Flash
     let newRiskScore = 0;
     try {
       const distressResult = await detectDistressPrompt({ message: input.message });
       newRiskScore = distressResult.output?.score || 0;
     } catch (e) {
-      console.warn('Distress detection failed or was blocked:', e);
+      console.warn('Distress detection failed:', e);
     }
     
     const flaggedForReview = newRiskScore >= 31; 
     const humanHandoffTriggered = newRiskScore >= 71; 
 
-    // Step 2: Prepare chat history for WellnessBot
-    // IMPORTANT: Gemini history must alternate between user and model, starting with user.
+    // Correctly mapping history for Genkit 1.x (using 'content' property)
     let historyForModel: any[] = [];
-    
-    // Process history to ensure it's valid for Gemini (alternating user/model)
     input.chatHistory.forEach((m) => {
       const role = m.role === 'assistant' ? 'model' : 'user';
       const lastMessage = historyForModel[historyForModel.length - 1];
       
-      // Only push if it's alternating
       if (!lastMessage || lastMessage.role !== role) {
         historyForModel.push({
           role: role,
-          parts: [{ text: m.content }],
+          content: [{ text: m.content }],
         });
       }
     });
 
-    // Ensure history starts with 'user'
     if (historyForModel.length > 0 && historyForModel[0].role === 'model') {
       historyForModel = historyForModel.slice(1);
     }
 
-    // Step 3: Get WellnessBot's response
-    const aiResponseGen = await ai.generate({
-      model: 'googleai/gemini-1.5-flash',
-      system: WELNESSBOT_SYSTEM_INSTRUCTION,
-      history: historyForModel,
-      prompt: input.message,
-      config: {
-        safetySettings: [
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' }
-        ]
-      }
-    });
-    
-    const aiResponse = aiResponseGen.text || "I'm here for you, but I'm having a little trouble connecting right now. Please tell me more about how you're feeling.";
+    let aiResponse = "I'm here for you, but I'm having a little trouble connecting right now. Please tell me more about how you're feeling.";
+    try {
+      const aiResponseGen = await ai.generate({
+        model: 'googleai/gemini-1.5-flash',
+        system: WELNESSBOT_SYSTEM_INSTRUCTION,
+        history: historyForModel,
+        prompt: input.message,
+        config: {
+          safetySettings: [
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' }
+          ]
+        }
+      });
+      aiResponse = aiResponseGen.text || aiResponse;
+    } catch (e) {
+      console.error('WellnessBot generation failed:', e);
+    }
 
     return {
       aiResponse,
