@@ -16,8 +16,7 @@ const ChatHistoryPartSchema = z.object({
 });
 
 const ChatWithWellnessBotInputSchema = z.object({
-  message: z.string().describe("The user's current message to the WellnessBot."),
-  chatHistory: z.array(ChatHistoryPartSchema).describe("The previous conversation history."),
+  chatHistory: z.array(ChatHistoryPartSchema).describe("The conversation history, including the latest user message as the last item."),
   userLanguage: z.string().describe('The user\'s preferred language code.'),
 });
 export type ChatWithWellnessBotInput = z.infer<typeof ChatWithWellnessBotInputSchema>;
@@ -38,7 +37,6 @@ CRITICAL RULES:
 - Keep responses under 150 words. Be warm and specific.
 - End every response with one concrete micro-action.`;
 
-// Safety settings that are permissive enough for mental health context while remaining safe
 const SAFETY_SETTINGS = [
   { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
   { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -58,13 +56,18 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
     outputSchema: ChatWithWellnessBotOutputSchema,
   },
   async (input) => {
-    // 1. Distress Detection
+    // 1. Identify the current message and the preceding history
+    const lastMessage = input.chatHistory[input.chatHistory.length - 1];
+    const userPrompt = lastMessage?.content || "";
+    const precedingHistory = input.chatHistory.slice(0, -1);
+
+    // 2. Distress Detection
     let newRiskScore = 0;
     try {
       const response = await ai.generate({
         model: 'googleai/gemini-1.5-flash',
         system: 'You are a psychological distress detector. Analyze the input message for signs of crisis, self-harm, or severe depression. Respond ONLY with a JSON object: {"score": number from 0 to 100}',
-        prompt: input.message,
+        prompt: userPrompt,
         config: {
           safetySettings: SAFETY_SETTINGS as any,
           responseMimeType: 'application/json',
@@ -79,16 +82,15 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
     const flaggedForReview = newRiskScore >= 31;
     const humanHandoffTriggered = newRiskScore >= 71;
 
-    // 2. Prepare History for Gemini
-    // Gemini rules: Must start with 'user', must alternate 'user'/'model'.
-    // If our history starts with an assistant greeting, we must skip it or prepend a dummy user message.
-    // We choose to start the history from the first user message.
+    // 3. Prepare History for Gemini
+    // Rules: Must start with 'user', must alternate 'user'/'model'. Must end with 'model'.
     const messages: any[] = [];
     
-    input.chatHistory.forEach((msg) => {
+    precedingHistory.forEach((msg) => {
       const role = msg.role === 'assistant' ? 'model' : 'user';
-      // Only push if it's a valid part of an alternating sequence starting with user
-      if (messages.length === 0 && role !== 'user') return; // Skip initial model/system messages
+      
+      // First message in history MUST be 'user'
+      if (messages.length === 0 && role !== 'user') return; 
       
       const last = messages[messages.length - 1];
       if (last && last.role === role) {
@@ -101,19 +103,19 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
       }
     });
 
-    // Final check: if history is not empty, ensure it ends with 'model' so current 'user' prompt is next
+    // Ensure history ends with 'model' so the next part (prompt) is 'user'
     while (messages.length > 0 && messages[messages.length - 1].role !== 'model') {
       messages.pop();
     }
 
-    // 3. Generate Main Response
-    let aiResponse = "I'm here for you. I'm listening—can you tell me more about how you're feeling?";
+    // 4. Generate Main Response
+    let aiResponse = "I'm here to listen. Can you tell me more about how you're feeling?";
     try {
       const response = await ai.generate({
         model: 'googleai/gemini-1.5-flash',
         system: WELLNESSBOT_SYSTEM_INSTRUCTION,
         history: messages,
-        prompt: `User Language: ${input.userLanguage}\n\nMessage: ${input.message}`,
+        prompt: `User Language: ${input.userLanguage}\n\nMessage: ${userPrompt}`,
         config: {
           safetySettings: SAFETY_SETTINGS as any,
         }
@@ -123,7 +125,8 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
         aiResponse = response.text;
       }
     } catch (e: any) {
-      console.error('WellnessBot response generation failed:', e);
+      console.error('WellnessBot generation failed:', e);
+      // Fallback is only used if API fails completely
     }
 
     return {

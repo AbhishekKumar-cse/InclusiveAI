@@ -77,12 +77,18 @@ export default function WellnessPage() {
     setIsLoading(true);
 
     const userMsgObj = { role: 'user', content: userMessage, timestamp: new Date().toISOString() };
-    const historyForAi = [...messages];
+    
+    // Construct full history including the new message for the AI
+    const historyForAi = [
+      ...messages,
+      userMsgObj
+    ];
+    
+    // Update UI immediately
     setMessages(prev => [...prev, userMsgObj]);
 
     try {
       const response = await chatWithWellnessBot({
-        message: userMessage,
         chatHistory: historyForAi.map(m => ({ role: m.role, content: m.content })),
         userLanguage: "en"
       });
