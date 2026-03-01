@@ -19,7 +19,8 @@ import { useState, useRef, useEffect } from "react";
 import { chatWithWellnessBot } from "@/ai/flows/wellness-bot-chat-with-distress-detection-flow";
 import { useToast } from "@/hooks/use-toast";
 import { useUser, useFirestore } from "@/firebase";
-import { doc, setDoc, updateDoc, arrayUnion, serverTimestamp } from "firebase/firestore";
+import { doc, arrayUnion, serverTimestamp } from "firebase/firestore";
+import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 
 export default function WellnessPage() {
   const { toast } = useToast();
@@ -47,7 +48,7 @@ export default function WellnessPage() {
       setSessionId(newSessionId);
       
       const sessionRef = doc(db, "chatSessions", newSessionId);
-      setDoc(sessionRef, {
+      setDocumentNonBlocking(sessionRef, {
         id: newSessionId,
         userId: user.uid,
         module: "wellness",
@@ -60,9 +61,9 @@ export default function WellnessPage() {
         humanHandoffTriggered: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
-      }).catch(console.error);
+      }, { merge: true });
     }
-  }, [user, db, sessionId]);
+  }, [user, db, sessionId, messages]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -78,10 +79,10 @@ export default function WellnessPage() {
     // Sync user message to Firestore
     if (sessionId && db) {
       const sessionRef = doc(db, "chatSessions", sessionId);
-      updateDoc(sessionRef, {
+      updateDocumentNonBlocking(sessionRef, {
         messages: arrayUnion(userMsgObj),
         updatedAt: serverTimestamp()
-      }).catch(console.error);
+      });
     }
 
     try {
@@ -107,18 +108,18 @@ export default function WellnessPage() {
         // Sync assistant response to Firestore
         if (sessionId) {
           const sessionRef = doc(db, "chatSessions", sessionId);
-          updateDoc(sessionRef, {
+          updateDocumentNonBlocking(sessionRef, {
             messages: arrayUnion(assistantMsgObj),
             riskLevel: response.newRiskScore > 70 ? "high" : response.newRiskScore > 30 ? "medium" : "low",
             humanHandoffTriggered: response.humanHandoffTriggered,
             updatedAt: serverTimestamp()
-          }).catch(console.error);
+          });
         }
 
         // Create a MoodLog entry
         const moodLogId = `log-${Date.now()}`;
         const moodLogRef = doc(db, "users", user.uid, "moodLogs", moodLogId);
-        setDoc(moodLogRef, {
+        setDocumentNonBlocking(moodLogRef, {
           id: moodLogId,
           userId: user.uid,
           date: new Date().toISOString().split('T')[0],
@@ -128,7 +129,7 @@ export default function WellnessPage() {
           aiNudgeSent: true,
           nudgeContent: response.aiResponse,
           timestamp: new Date().toISOString()
-        }).catch(console.error);
+        }, { merge: true });
       }
 
       if (response.humanHandoffTriggered) {
