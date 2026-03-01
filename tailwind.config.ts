@@ -1,3 +1,4 @@
+
 import type {Config} from 'tailwindcss';
 
 export default {
@@ -10,9 +11,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'],
-        code: ['monospace'],
+        body: ['DM Sans', 'sans-serif'],
+        headline: ['Outfit', 'sans-serif'],
+        code: ['JetBrains Mono', 'monospace'],
       },
       colors: {
         background: 'hsl(var(--background))',
@@ -65,6 +66,13 @@ export default {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+        teal: { 900: '#012A2F', 700: '#024950', 500: '#028090', 300: '#02C39A', 100: '#C8F7EF' },
+        mint: { vivid: '#00F5C4' },
+        crisis: { red: '#FF4757', orange: '#FF6B35', yellow: '#FFD93D' },
+        safe: { green: '#6BCB77' },
+        wellness: { purple: '#7B5EA7' },
+        access: { blue: '#4ECDC4' },
+        surface: { dark: '#0A1628', card: '#111827' }
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -88,10 +96,20 @@ export default {
             height: '0',
           },
         },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' }
+        },
+        pulseGlow: {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.5' }
+        }
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'shimmer': 'shimmer 2s infinite linear',
+        'pulse-glow': 'pulseGlow 2s infinite ease-in-out',
       },
     },
   },

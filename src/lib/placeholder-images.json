@@ -1,3 +1,34 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "hero-students",
+      "description": "Diverse students collaborating in a modern university library",
+      "imageUrl": "https://images.unsplash.com/photo-1758270705518-b61b40527e76?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8ZGl2ZXJzZSUyMHN0dWRlbnRzfGVufDB8fHx8MTc3MjM1MzA4OXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "diverse students"
+    },
+    {
+      "id": "module-accessibility",
+      "description": "Abstract visualization of accessibility icons and data",
+      "imageUrl": "https://images.unsplash.com/photo-1643930491057-d0afaa0b51c7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxhY2Nlc3NpYmlsaXR5JTIwc3ltYm9sc3xlbnwwfHx8fDE3NzIzNTMwODl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "accessibility symbols"
+    },
+    {
+      "id": "module-wellness",
+      "description": "Calm and supportive AI wellness interface concept",
+      "imageUrl": "https://images.unsplash.com/photo-1500904156668-758cff89dcff?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxtZW50YWwlMjB3ZWxsbmVzc3xlbnwwfHx8fDE3NzIzNDM5OTd8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "mental wellness"
+    },
+    {
+      "id": "module-crisis",
+      "description": "Real-time crisis map with risk indicators",
+      "imageUrl": "https://images.unsplash.com/photo-1531132089310-f0e1e64bf85d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxlbWVyZ2VuY3klMjBtYXB8ZW58MHx8fHwxNzcyMzUzMDg5fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "emergency map"
+    },
+    {
+      "id": "module-inclusion",
+      "description": "Code editor showing accessibility audit results",
+      "imageUrl": "https://images.unsplash.com/photo-1593720213681-e9a8778330a7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHx3ZWIlMjBjb2RlfGVufDB8fHx8MTc3MjM1MzA4OXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "web code"
+    }
+  ]
 }
