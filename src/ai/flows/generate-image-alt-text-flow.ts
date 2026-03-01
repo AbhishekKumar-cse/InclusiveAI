@@ -7,8 +7,8 @@
  * - GenerateImageAltTextOutput - The return type for the generateImageAltText function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
 
 const GenerateImageAltTextInputSchema = z.object({
   photoDataUri: z
@@ -27,28 +27,22 @@ export type GenerateImageAltTextOutput = z.infer<typeof GenerateImageAltTextOutp
 export async function generateImageAltText(
   input: GenerateImageAltTextInput
 ): Promise<GenerateImageAltTextOutput> {
-  return generateImageAltTextFlow(input);
-}
-
-const generateImageAltTextPrompt = ai.definePrompt({
-  name: 'generateImageAltTextPrompt',
-  input: {schema: GenerateImageAltTextInputSchema},
-  output: {schema: GenerateImageAltTextOutputSchema},
-  model: 'googleai/gemini-1.5-pro',
-  prompt: `Describe this image comprehensively for a screen reader user in under 125 words.
+  try {
+    const response = await ai.generate({
+      model: 'googleai/gemini-1.5-pro',
+      prompt: `Describe this image comprehensively for a screen reader user in under 125 words.
 Do not begin with 'Image of'. Include: subject, context, any visible text, spatial layout.
 
-Image: {{media url=photoDataUri}}`
-});
+Image: ${input.photoDataUri}`,
+    });
 
-const generateImageAltTextFlow = ai.defineFlow(
-  {
-    name: 'generateImageAltTextFlow',
-    inputSchema: GenerateImageAltTextInputSchema,
-    outputSchema: GenerateImageAltTextOutputSchema
-  },
-  async input => {
-    const {output} = await generateImageAltTextPrompt(input);
-    return output!;
+    const altText = response.text || 'Image';
+
+    return {
+      altText: String(altText),
+    };
+  } catch (error) {
+    console.error('Alt text generation failed:', error);
+    throw error;
   }
-);
+}

@@ -30,15 +30,10 @@ const WcagFixSuggestionOutputSchema = z.object({
 export type WcagFixSuggestionOutput = z.infer<typeof WcagFixSuggestionOutputSchema>;
 
 export async function generateWcagFixSuggestions(input: WcagFixSuggestionInput): Promise<WcagFixSuggestionOutput> {
-  return wcagFixSuggestionFlow(input);
-}
-
-const wcagFixSuggestionPrompt = ai.definePrompt({
-  name: 'wcagFixSuggestionPrompt',
-  model: 'googleai/gemini-1.5-flash',
-  input: { schema: WcagFixSuggestionInputSchema },
-  output: { schema: WcagFixSuggestionOutputSchema },
-  prompt: `You are an expert accessibility consultant specializing in WCAG 2.2 standards.
+  try {
+    const response = await ai.generate({
+      model: 'googleai/gemini-1.5-flash',
+      prompt: `You are an expert accessibility consultant specializing in WCAG 2.2 standards.
 Your task is to provide clear, actionable advice for fixing web accessibility issues.
 
 Based on the following WCAG audit details, provide a plain-language description of the problem,
@@ -46,29 +41,43 @@ step-by-step fix instructions, and a corrected HTML code snippet. Ensure the cor
 is ready to be used and directly addresses the issue.
 
 WCAG Issue Details:
-- Issue Type: {{{issueType}}}
-- Severity: {{{severity}}}
-- Affected Element: {{{element}}}
-- Page URL: {{{page}}}
-- Original Description: {{{description}}}
-- WCAG Criteria: {{{wcagCriteria}}}
+- Issue Type: ${input.issueType}
+- Severity: ${input.severity}
+- Affected Element: ${input.element}
+- Page URL: ${input.page}
+- Original Description: ${input.description}
+- WCAG Criteria: ${input.wcagCriteria}
 - Offending Code Snippet:
-  ```html
-  {{{offendingCodeSnippet}}}
-  ```
+  \`\`\`html
+  ${input.offendingCodeSnippet}
+  \`\`\`
 
-Provide the response in the following JSON format:
-{{json output.schema}}`,
-});
+Provide the response as a JSON object with these exact fields:
+{
+  "plainLanguageDescription": "...",
+  "fixInstructions": "...",
+  "correctedCodeSnippet": "..."
+}`,
+    });
 
-const wcagFixSuggestionFlow = ai.defineFlow(
-  {
-    name: 'wcagFixSuggestionFlow',
-    inputSchema: WcagFixSuggestionInputSchema,
-    outputSchema: WcagFixSuggestionOutputSchema,
-  },
-  async (input) => {
-    const { output } = await wcagFixSuggestionPrompt(input);
-    return output!;
+    const responseText = response.text || '{}';
+
+    try {
+      const parsed = JSON.parse(responseText);
+      return {
+        plainLanguageDescription: String(parsed.plainLanguageDescription || ''),
+        fixInstructions: String(parsed.fixInstructions || ''),
+        correctedCodeSnippet: String(parsed.correctedCodeSnippet || ''),
+      };
+    } catch {
+      return {
+        plainLanguageDescription: String(responseText),
+        fixInstructions: 'Please review the issue description for fix instructions.',
+        correctedCodeSnippet: input.offendingCodeSnippet,
+      };
+    }
+  } catch (error) {
+    console.error('WCAG fix suggestion generation failed:', error);
+    throw error;
   }
-);
+}

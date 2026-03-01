@@ -7,8 +7,8 @@
  * - AccessAssistAIHelpChatOutput - The return type for the accessAssistAIHelpChat function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
 
 const AccessAssistAIHelpChatInputSchema = z.object({
   message: z.string().describe('The user\'s question about AccessAssist features or text to simplify.'),
@@ -21,17 +21,10 @@ const AccessAssistAIHelpChatOutputSchema = z.object({
 export type AccessAssistAIHelpChatOutput = z.infer<typeof AccessAssistAIHelpChatOutputSchema>;
 
 export async function accessAssistAIHelpChat(input: AccessAssistAIHelpChatInput): Promise<AccessAssistAIHelpChatOutput> {
-  return accessAssistAIHelpChatFlow(input);
-}
-
-const accessAssistAIHelpChatPrompt = ai.definePrompt({
-  name: 'accessAssistAIHelpChatPrompt',
-  input: {schema: AccessAssistAIHelpChatInputSchema},
-  output: {schema: AccessAssistAIHelpChatOutputSchema},
-  config: {
-    model: 'googleai/gemini-1.5-flash',
-  },
-  prompt: `You are AccessAssistBot, an AI assistant specifically designed to help university students quickly understand and utilize the features of the InclusiveAI AccessAssist module. Your primary goal is to provide fast, clear, and concise answers to questions about AccessAssist functionalities or to simplify complex text provided by the user.
+  try {
+    const response = await ai.generate({
+      model: 'googleai/gemini-1.5-flash',
+      prompt: `You are AccessAssistBot, an AI assistant specifically designed to help university students quickly understand and utilize the features of the InclusiveAI AccessAssist module. Your primary goal is to provide fast, clear, and concise answers to questions about AccessAssist functionalities or to simplify complex text provided by the user.
 
 Key functionalities you can assist with include:
 - Dyslexia Mode (OpenDyslexic, Lexie Readable, Atkinson Hyperlegible fonts, syllable highlighting)
@@ -47,17 +40,16 @@ When asked to simplify text, you should make it easier to understand while prese
 Keep your responses under 150 words and focus on actionable advice or direct answers.
 
 User's query:
-{{{message}}}`,
-});
+${input.message}`,
+    });
 
-const accessAssistAIHelpChatFlow = ai.defineFlow(
-  {
-    name: 'accessAssistAIHelpChatFlow',
-    inputSchema: AccessAssistAIHelpChatInputSchema,
-    outputSchema: AccessAssistAIHelpChatOutputSchema,
-  },
-  async (input) => {
-    const {output} = await accessAssistAIHelpChatPrompt(input);
-    return output!;
-  },
-);
+    const responseText = response.text || 'I\'m here to help with AccessAssist features.';
+
+    return {
+      response: String(responseText),
+    };
+  } catch (error) {
+    console.error('AccessAssistBot generation failed:', error);
+    throw error;
+  }
+}

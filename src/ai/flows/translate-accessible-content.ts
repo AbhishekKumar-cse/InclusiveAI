@@ -21,36 +21,27 @@ const TranslateAccessibleContentOutputSchema = z.object({
 });
 export type TranslateAccessibleContentOutput = z.infer<typeof TranslateAccessibleContentOutputSchema>;
 
-const translateAccessibleContentPrompt = ai.definePrompt({
-  name: 'translateAccessibleContentPrompt',
-  input: { schema: TranslateAccessibleContentInputSchema },
-  output: { schema: TranslateAccessibleContentOutputSchema },
-  model: 'googleai/gemini-1.5-pro',
-  prompt: `Translate the following health/educational content to {{targetLanguage}}.
+export async function translateAccessibleContent(input: TranslateAccessibleContentInput): Promise<TranslateAccessibleContentOutput> {
+  try {
+    const response = await ai.generate({
+      model: 'googleai/gemini-1.5-pro',
+      prompt: `Translate the following health/educational content to ${input.targetLanguage}.
 Maintain plain language (Flesch reading ease 70+).
 Preserve all formatting and emphasis.
 Maintain cultural sensitivity — do not translate idiomatic expressions literally.
 Do not include any preamble — output only the translation.
 
 Content:
-{{{content}}}`,
-});
+${input.content}`,
+    });
 
-const translateAccessibleContentFlow = ai.defineFlow(
-  {
-    name: 'translateAccessibleContentFlow',
-    inputSchema: TranslateAccessibleContentInputSchema,
-    outputSchema: TranslateAccessibleContentOutputSchema,
-  },
-  async (input) => {
-    const { output } = await translateAccessibleContentPrompt(input);
-    if (!output) {
-      throw new Error('Failed to translate content.');
-    }
-    return output;
+    const translatedContent = response.text || input.content;
+
+    return {
+      translatedContent: String(translatedContent),
+    };
+  } catch (error) {
+    console.error('Translation failed:', error);
+    throw error;
   }
-);
-
-export async function translateAccessibleContent(input: TranslateAccessibleContentInput): Promise<TranslateAccessibleContentOutput> {
-  return translateAccessibleContentFlow(input);
 }
