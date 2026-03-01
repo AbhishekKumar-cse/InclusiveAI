@@ -72,14 +72,21 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
     // Step 1: Detect distress in the user's message using Gemini 1.5 Flash
     const distressResult = await detectDistressPrompt({ message: input.message });
     const newRiskScore = distressResult.output?.score || 0;
-    const flaggedForReview = newRiskScore >= 31; // Flag for review if medium or high risk
-    const humanHandoffTriggered = newRiskScore >= 71; // Trigger handoff if crisis level risk
+    const flaggedForReview = newRiskScore >= 31; 
+    const humanHandoffTriggered = newRiskScore >= 71; 
 
-    // Step 2: Prepare chat history for WellnessBot (Gemini 1.5 Pro)
-    const historyForModel = input.chatHistory.map(m => ({
+    // Step 2: Prepare chat history for WellnessBot
+    // IMPORTANT: Gemini history must alternate between user and model, starting with user.
+    // We filter history to ensure it's valid for the model.
+    let historyForModel = input.chatHistory.map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
+
+    // Slicing out initial assistant greeting if it exists, to ensure history starts with 'user'
+    if (historyForModel.length > 0 && historyForModel[0].role === 'model') {
+      historyForModel = historyForModel.slice(1);
+    }
 
     // Step 3: Get WellnessBot's response using Gemini 1.5 Pro
     const aiResponseGen = await ai.generate({
@@ -88,18 +95,16 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
       history: historyForModel,
       prompt: input.message,
       config: {
-        // Configure safety settings if desired, e.g., to be less strict for wellness context
         safetySettings: [
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }, // Allowing discussion of difficult topics
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
           { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' }
         ]
       }
     });
-    const aiResponse = aiResponseGen.text() || '';
+    const aiResponse = aiResponseGen.text || '';
 
-    // Step 4: Return combined results
     return {
       aiResponse,
       newRiskScore,
