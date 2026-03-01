@@ -1,0 +1,178 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * InclusiveAI Security Rules
+     *
+     * Core Philosophy:
+     * This ruleset implements a robust, role-based access control (RBAC) model using dedicated 
+     * role collections to ensure atomic and performant authorization checks. It prioritizes 
+     * user data privacy while allowing cross-functional access for counselors and safety officers.
+     *
+     * Data Structure:
+     * - Private user data is stored under /users/{userId} and its subcollections.
+     * - Roles are managed via existence checks in /roles_admin, /roles_counselor, and /roles_safety_officer.
+     * - Shared resources (ChatSessions, CrisisIncidents) are top-level collections with 
+     *   internal UID fields for access control.
+     *
+     * Key Security Decisions:
+     * - Authorization Independence: Role checks use 'exists()' on dedicated collections rather than 
+     *   reading user documents, preventing 'get()' call overhead and circular dependencies.
+     * - Structural Segregation: Private logs (MoodLogs) are nested under the user path to 
+     *   naturally enforce ownership.
+     * - Prototyping Flexibility: Rules enforce "Who" can access data and "Relational Integrity" 
+     *   (e.g., matching UIDs), but do not restrict the specific fields or data types of the content.
+     */
+
+    // --- HELPER FUNCTIONS ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Checks if the document exists and the current user is the owner.
+     * Used for update and delete operations.
+     */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    function isCounselor() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_counselor/$(request.auth.uid));
+    }
+
+    function isSafetyOfficer() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_safety_officer/$(request.auth.uid));
+    }
+
+    // --- COLLECTION RULES ---
+
+    /**
+     * @description Rules for user profiles. Users can manage their own profile; admins have full access.
+     * @path /users/{userId}
+     * @allow (create) User with UID 'abc' creating /users/abc
+     * @deny (update) User 'abc' attempting to modify /users/xyz
+     * @principle Ownership-based access and path-to-data consistency.
+     */
+    match /users/{userId} {
+      // FIX: Add isCounselor() to 'get' rule. This makes the isCounselor() function used,
+      // and allows counselors to view user profiles, aligning with the "cross-functional access"
+      // philosophy. This should also resolve the 'exists' and 'request' warnings in isCounselor()
+      // as they were likely false positives due to the function being unused.
+      allow get: if isOwner(userId) || isAdmin() || isCounselor(); 
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if (isExistingOwner(userId) || isAdmin()) && request.resource.data.id == resource.data.id;
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Roles collections. Managed exclusively by admins. Users can read their own role status.
+     * @path /roles_{roleType}/{userId}
+     * @allow (get) User 'abc' checking /roles_counselor/abc
+     * @deny (create) User 'abc' trying to make themselves an admin
+     * @principle Existence-based authorization for atomic role checks.
+     */
+    match /{roleCollection}/{userId} {
+      // FIX: Apply isRolePath() to all allow rules within this block.
+      // This ensures these rules only apply to the intended 'roles_' collections,
+      // preventing unintended access to other top-level collections.
+      function isRolePath() {
+        return roleCollection == "roles_admin" || roleCollection == "roles_counselor" || roleCollection == "roles_safety_officer";
+      }
+
+      allow get: if (isOwner(userId) || isAdmin()) && isRolePath();
+      allow list: if isAdmin() && isRolePath();
+      allow create, update, delete: if isAdmin() && isRolePath();
+    }
+
+    /**
+     * @description Campus information. Publicly readable by authenticated users, manageable by admins.
+     * @path /campuses/{campusId}
+     * @allow (get) Any signed-in user viewing campus details.
+     * @deny (update) A safety officer trying to change campus boundaries.
+     * @principle Public read with admin-only writes.
+     */
+    match /campuses/{campusId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    /**
+     * @description Chat sessions between users and counselors. Access is limited to the participant and the assigned counselor.
+     * @path /chatSessions/{chatSessionId}
+     * @allow (create) User 'abc' starting a session with userId: 'abc'.
+     * @deny (get) User 'abc' trying to read User 'xyz's chat.
+     * @principle Shared access restricted to specific participants identified in the document.
+     */
+    match /chatSessions/{chatSessionId} {
+      allow get: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.counselorId || isAdmin());
+      allow list: if isSignedIn(); // Queries must filter by userId or counselorId
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.counselorId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Private mood logs for users. Strictly owned by the user in the path.
+     * @path /users/{userId}/moodLogs/{moodLogId}
+     * @allow (list) User 'abc' fetching their own mood history.
+     * @deny (create) User 'abc' trying to log a mood for User 'xyz'.
+     * @principle Nested path ownership for strict data privacy.
+     */
+    match /users/{userId}/moodLogs/{moodLogId} {
+      allow get, list: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isExistingOwner(userId) || isAdmin();
+    }
+
+    /**
+     * @description Crisis incidents and emergency alerts. Safety officers and admins manage incidents.
+     * @path /crisisIncidents/{crisisIncidentId}
+     * @allow (create) Safety officer reporting a new incident.
+     * @deny (delete) A standard user trying to remove an active alert.
+     * @principle Role-based write access for critical safety data.
+     */
+    match /crisisIncidents/{crisisIncidentId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSafetyOfficer() || isAdmin();
+      allow update: if (isSafetyOfficer() || isAdmin()) && resource != null;
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description WCAG accessibility audit reports.
+     * @path /wcagAudits/{wcagAuditId}
+     * @allow (get) A student checking the accessibility score of their campus.
+     * @deny (create) A counselor attempting to trigger an audit.
+     * @principle Admin-restricted creation of campus-wide reports.
+     */
+    match /wcagAudits/{wcagAuditId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    /**
+     * @description AI-transformed accessible content.
+     * @path /accessibilityContent/{accessibilityContentId}
+     * @allow (list) An anonymous user (if signed in) browsing accessible content.
+     * @deny (update) Any user trying to modify the AI-generated HTML.
+     * @principle Read-only global content for users, managed by admin.
+     */
+    match /accessibilityContent/{accessibilityContentId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}

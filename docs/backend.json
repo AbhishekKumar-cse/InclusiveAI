@@ -1,0 +1,656 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user profile in the InclusiveAI application, storing authentication details, accessibility preferences, and role-based permissions.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity (Firebase Auth UID)."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address.",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "role": {
+          "type": "string",
+          "description": "The user's role, determining their permissions and access levels within the application.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "accessibilityPrefs": {
+          "type": "string",
+          "description": "User's personalized accessibility preferences. This is an object containing: font (enum: default, opendyslexic, lexie, atkinson), fontSize (number 12-24), letterSpacing (number 0-0.2em), lineHeight (number 1.4-2.2), backgroundColor (enum: default, cream, yellow, blue, dark), syllableHighlight (boolean), ttsEnabled (boolean), reducedMotion (boolean), highContrast (boolean), neurodiverseMode (enum: none, adhd, autism, sensory, processing)."
+        },
+        "language": {
+          "type": "string",
+          "description": "The user's preferred language, specified as a BCP47 language code (e.g., 'en', 'hi', 'ta')."
+        },
+        "wellnessConsent": {
+          "type": "boolean",
+          "description": "Indicates if the user has consented to WellnessBot using their mood history for personalized nudges."
+        },
+        "crisisContactOptIn": {
+          "type": "boolean",
+          "description": "Indicates if the user has opted in to receive campus safety alerts and communications during emergencies."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the user account was created.",
+          "format": "date-time"
+        },
+        "lastActive": {
+          "type": "string",
+          "description": "Timestamp of the user's last active session.",
+          "format": "date-time"
+        },
+        "campusId": {
+          "type": "string",
+          "description": "Reference to the Campus entity the user belongs to. (Relationship: Campus 1:N User)"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "displayName",
+        "role",
+        "accessibilityPrefs",
+        "language",
+        "wellnessConsent",
+        "crisisContactOptIn",
+        "createdAt",
+        "lastActive",
+        "campusId"
+      ]
+    },
+    "ChatSession": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ChatSession",
+      "type": "object",
+      "description": "Stores details and messages for an ongoing chat session with an AI companion or counselor.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ChatSession entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User who initiated the chat session. (Relationship: User 1:N ChatSession)"
+        },
+        "module": {
+          "type": "string",
+          "description": "The module the chat session is associated with.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "messages": {
+          "type": "array",
+          "description": "An ordered list of messages exchanged during the session. Each item is an object with: role (enum: user, assistant, system), content (string), timestamp (date-time), language (string), riskScore (number 0-100, null for non-wellness messages), flaggedForReview (boolean).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "riskLevel": {
+          "type": "string",
+          "description": "The overall risk level detected in the conversation, based on distress detection.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "humanHandoffTriggered": {
+          "type": "boolean",
+          "description": "Indicates if a human counselor handoff has been triggered for this session."
+        },
+        "handoffTimestamp": {
+          "type": "string",
+          "description": "Timestamp when the human handoff was triggered, if applicable. Null if not triggered.",
+          "format": "date-time"
+        },
+        "counselorId": {
+          "type": "string",
+          "description": "Reference to the User (counselor) assigned to handle the human handoff, if any. Null if not assigned or not triggered. (Relationship: User 1:N ChatSession)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the chat session was initiated.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the chat session was last updated (e.g., new message added).",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "module",
+        "messages",
+        "riskLevel",
+        "humanHandoffTriggered",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MoodLog": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "MoodLog",
+      "type": "object",
+      "description": "Records a user's mood for a specific day, along with contributing factors and AI nudges.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the MoodLog entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User who logged their mood. (Relationship: User 1:N MoodLog)"
+        },
+        "date": {
+          "type": "string",
+          "description": "The date for which the mood was logged, in YYYY-MM-DD format."
+        },
+        "moodScore": {
+          "type": "number",
+          "description": "A numerical score representing the user's mood (1-5, where 5 is great)."
+        },
+        "moodEmoji": {
+          "type": "string",
+          "description": "An emoji representing the logged mood."
+        },
+        "note": {
+          "type": "string",
+          "description": "An optional textual note about the user's mood (max 500 characters)."
+        },
+        "factors": {
+          "type": "array",
+          "description": "A list of factors contributing to the user's mood (e.g., 'exam_stress', 'sleep', 'social').",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aiNudgeSent": {
+          "type": "boolean",
+          "description": "Indicates if an AI-generated wellbeing nudge was sent based on this mood log."
+        },
+        "nudgeContent": {
+          "type": "string",
+          "description": "The content of the AI-generated wellbeing nudge, if one was sent."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp when the mood log was recorded.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "date",
+        "moodScore",
+        "moodEmoji",
+        "timestamp"
+      ]
+    },
+    "CrisisIncident": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CrisisIncident",
+      "type": "object",
+      "description": "Documents a crisis incident on campus, including type, severity, affected areas, and alert status.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the CrisisIncident entity."
+        },
+        "campusId": {
+          "type": "string",
+          "description": "Reference to the Campus where the incident occurred. (Relationship: Campus 1:N CrisisIncident)"
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of crisis incident.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "severity": {
+          "type": "string",
+          "description": "The severity level of the incident.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "riskScore": {
+          "type": "number",
+          "description": "A calculated risk score (0-100) associated with the incident."
+        },
+        "affectedZones": {
+          "type": "array",
+          "description": "A list of campus zones affected by the incident. Each item is an object with: zoneId (string), zoneName (string), riskLevel (string), coordinates (object: { latitude: number, longitude: number }).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "alertDraft": {
+          "type": "string",
+          "description": "A draft of the alert message generated by AI. This is an object containing: title (string), body (string), language (string), evacuationRoute (string)."
+        },
+        "alertStatus": {
+          "type": "string",
+          "description": "The current status of the emergency alert associated with this incident.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authorizedBy": {
+          "type": "string",
+          "description": "Reference to the User (safety_officer) who authorized the alert, if approved. Null if not approved. (Relationship: User 1:N CrisisIncident)"
+        },
+        "authorizedAt": {
+          "type": "string",
+          "description": "Timestamp when the alert was authorized, if applicable.",
+          "format": "date-time"
+        },
+        "broadcastChannels": {
+          "type": "array",
+          "description": "A list of channels through which the alert was broadcast.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sensorReadings": {
+          "type": "string",
+          "description": "Relevant sensor readings at the time of the incident. This is an object containing: rainfall_mmhr (number), temperature_c (number), windSpeed_kmh (number), floodRisk (number), heatIndex (number)."
+        },
+        "reportedBy": {
+          "type": "string",
+          "description": "Reference to the User who reported the incident, or 'system' if auto-detected. (Relationship: User 1:N CrisisIncident)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the crisis incident was recorded.",
+          "format": "date-time"
+        },
+        "resolvedAt": {
+          "type": "string",
+          "description": "Timestamp when the crisis incident was marked as resolved. Null if ongoing.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "campusId",
+        "type",
+        "severity",
+        "riskScore",
+        "affectedZones",
+        "alertDraft",
+        "alertStatus",
+        "broadcastChannels",
+        "sensorReadings",
+        "reportedBy",
+        "createdAt"
+      ]
+    },
+    "WcagAudit": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WcagAudit",
+      "type": "object",
+      "description": "Stores the results of an automated WCAG accessibility audit for a campus URL.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the WcagAudit entity."
+        },
+        "campusId": {
+          "type": "string",
+          "description": "Reference to the Campus where the audit was conducted. (Relationship: Campus 1:N WcagAudit)"
+        },
+        "triggeredBy": {
+          "type": "string",
+          "description": "Reference to the User (admin) who triggered the audit. (Relationship: User 1:N WcagAudit)"
+        },
+        "urlScanned": {
+          "type": "string",
+          "description": "The base URL that was scanned for accessibility issues."
+        },
+        "totalPages": {
+          "type": "number",
+          "description": "The total number of pages scanned during the audit."
+        },
+        "totalIssues": {
+          "type": "number",
+          "description": "The total number of accessibility issues found across all scanned pages."
+        },
+        "criticalCount": {
+          "type": "number",
+          "description": "Count of critical severity issues found."
+        },
+        "seriousCount": {
+          "type": "number",
+          "description": "Count of serious severity issues found."
+        },
+        "moderateCount": {
+          "type": "number",
+          "description": "Count of moderate severity issues found."
+        },
+        "minorCount": {
+          "type": "number",
+          "description": "Count of minor severity issues found."
+        },
+        "wcagScore": {
+          "type": "number",
+          "description": "A calculated WCAG score (0-100) representing the overall accessibility compliance."
+        },
+        "issues": {
+          "type": "array",
+          "description": "A list of all accessibility issues identified during the audit. Each item is an object with: issueId (string), type (enum: contrast, alt_text, keyboard, aria, focus, label, structure), severity (enum: critical, serious, moderate, minor), element (string: CSS selector), page (string: URL), description (string), howToFix (string), codeSnippet (string: offending HTML), fixedCode (string: corrected HTML), wcagCriteria (string: e.g., '1.4.3 Contrast (Minimum)'), status (enum: open, in_progress, resolved, ignored).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "trendData": {
+          "type": "array",
+          "description": "Historical trend data of the WCAG score for this audit. Each item is an object with: date (string: YYYY-MM-DD), score (number).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the WCAG audit was initiated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "campusId",
+        "triggeredBy",
+        "urlScanned",
+        "totalPages",
+        "totalIssues",
+        "criticalCount",
+        "seriousCount",
+        "moderateCount",
+        "minorCount",
+        "wcagScore",
+        "issues",
+        "createdAt"
+      ]
+    },
+    "Campus": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Campus",
+      "type": "object",
+      "description": "Defines a university campus, including its location, defined zones, and associated personnel.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Campus entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The official name of the campus."
+        },
+        "location": {
+          "type": "string",
+          "description": "The geographical coordinates of the campus (GeoPoint, represented as an object with 'latitude': number and 'longitude': number)."
+        },
+        "zones": {
+          "type": "array",
+          "description": "A list of defined geographical zones within the campus. Each item is an object with: zoneId (string), name (string), type (enum: building, outdoor, parking, sports), coordinates (array of GeoPoint objects representing a polygon), drainageRisk (number), elevation (number).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "safetyOfficerIds": {
+          "type": "array",
+          "description": "References to Users with the 'safety_officer' role associated with this campus. (Relationship: User N:N Campus)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "counselorIds": {
+          "type": "array",
+          "description": "References to Users with the 'counselor' role associated with this campus. (Relationship: User N:N Campus)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "location",
+        "zones",
+        "safetyOfficerIds",
+        "counselorIds"
+      ]
+    },
+    "AccessibilityContent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AccessibilityContent",
+      "type": "object",
+      "description": "Stores original web content and its various AI-transformed accessible versions.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the AccessibilityContent entity."
+        },
+        "originalUrl": {
+          "type": "string",
+          "description": "The URL of the original web content."
+        },
+        "originalHtml": {
+          "type": "string",
+          "description": "The original HTML content before any transformations."
+        },
+        "transformedVersions": {
+          "type": "string",
+          "description": "Various AI-transformed versions of the content. This is an object containing: dyslexiaMode (string: transformed HTML), highContrast (string), screenReaderOptimized (string), simplifiedLanguage (string), multilingualVersions (object: map of language codes (string) to translated HTML content (string))."
+        },
+        "altTextsGenerated": {
+          "type": "string",
+          "description": "A map where keys are image URLs (string) found in the content and values are their AI-generated alt texts (string)."
+        },
+        "lastTransformed": {
+          "type": "string",
+          "description": "Timestamp when the content was last transformed.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "originalUrl",
+        "originalHtml",
+        "transformedVersions",
+        "altTextsGenerated",
+        "lastTransformed"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles, authentication details, accessibility preferences, and campus affiliation. Private to the user. Includes 'campusId' for campus linkage. Note: User roles are managed via separate role collections for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth UID of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles_admin/{userId}",
+        "definition": {
+          "entityName": "AdminRole",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "A dedicated collection for users with the 'admin' role. Authorization for admin access is based on the existence of a document in this collection, ensuring atomic rule evaluation without 'get()' calls.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth UID of the admin user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles_counselor/{userId}",
+        "definition": {
+          "entityName": "CounselorRole",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "A dedicated collection for users with the 'counselor' role. Authorization for counselor access is based on the existence of a document in this collection, ensuring atomic rule evaluation without 'get()' calls.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth UID of the counselor user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles_safety_officer/{userId}",
+        "definition": {
+          "entityName": "SafetyOfficerRole",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "A dedicated collection for users with the 'safety_officer' role. Authorization for safety officer access is based on the existence of a document in this collection, ensuring atomic rule evaluation without 'get()' calls.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth UID of the safety officer user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/campuses/{campusId}",
+        "definition": {
+          "entityName": "Campus",
+          "schema": {
+            "$ref": "#/backend/entities/Campus"
+          },
+          "description": "Defines a university campus with location, zones, and associated personnel IDs. Read-only for authenticated users, managed by administrators via Cloud Functions. Includes denormalized 'safetyOfficerIds' and 'counselorIds' arrays.",
+          "params": [
+            {
+              "name": "campusId",
+              "description": "The unique identifier for the campus."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/chatSessions/{chatSessionId}",
+        "definition": {
+          "entityName": "ChatSession",
+          "schema": {
+            "$ref": "#/backend/entities/ChatSession"
+          },
+          "description": "Stores details and messages for chat sessions. Includes denormalized 'userId' for user ownership and 'counselorId' for assigned counselor access, enabling authorization independence.",
+          "params": [
+            {
+              "name": "chatSessionId",
+              "description": "The unique identifier for the chat session."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/moodLogs/{moodLogId}",
+        "definition": {
+          "entityName": "MoodLog",
+          "schema": {
+            "$ref": "#/backend/entities/MoodLog"
+          },
+          "description": "A subcollection storing a user's private mood logs. Ownership is explicitly enforced by the hierarchical path, simplifying security rules and ensuring data privacy.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth UID of the user who logged the mood."
+            },
+            {
+              "name": "moodLogId",
+              "description": "The unique identifier for the mood log entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/crisisIncidents/{crisisIncidentId}",
+        "definition": {
+          "entityName": "CrisisIncident",
+          "schema": {
+            "$ref": "#/backend/entities/CrisisIncident"
+          },
+          "description": "Documents crisis incidents occurring on a campus. Includes 'campusId' for campus affiliation, 'reportedBy' and 'authorizedBy' for user context. Read by all authenticated users. Write access restricted to safety officers and admins.",
+          "params": [
+            {
+              "name": "crisisIncidentId",
+              "description": "The unique identifier for the crisis incident."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/wcagAudits/{wcagAuditId}",
+        "definition": {
+          "entityName": "WcagAudit",
+          "schema": {
+            "$ref": "#/backend/entities/WcagAudit"
+          },
+          "description": "Stores automated WCAG accessibility audit results for campus URLs. Includes 'campusId' and 'triggeredBy' for context. Read by all authenticated users. Write access restricted to administrators.",
+          "params": [
+            {
+              "name": "wcagAuditId",
+              "description": "The unique identifier for the WCAG audit report."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/accessibilityContent/{accessibilityContentId}",
+        "definition": {
+          "entityName": "AccessibilityContent",
+          "schema": {
+            "$ref": "#/backend/entities/AccessibilityContent"
+          },
+          "description": "Stores original web content and its various AI-transformed accessible versions. This is global content accessible by all authenticated users, with creation/management restricted to administrators.",
+          "params": [
+            {
+              "name": "accessibilityContentId",
+              "description": "The unique identifier for the accessible content entry."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed following the CORE DESIGN PRINCIPLES and DESIGN STRATEGY MANDATES to ensure a secure, scalable, and debuggable database. Key strategies include:\n\n1.  **Authorization Independence (CRITICAL)**: To eliminate hierarchical authorization dependencies (`get()`) in security rules for role checks, a set of dedicated role collections (e.g., `/roles_admin/{userId}`, `/roles_counselor/{userId}`) has been introduced. Instead of reading the `role` field from a user's profile, rules will now check for the `existence` of a document in the respective role collection. This makes authorization checks atomic, robust, and significantly easier to debug. For instance, an 'admin' can be verified by `exists(/roles_admin/$(request.auth.uid))`.\n\n2.  **Structural Segregation (Homogeneous Security Posture)**:\n    *   User-specific private data, such as `MoodLog` documents, are strictly segregated into subcollections under the user's profile: `/users/{userId}/moodLogs/{moodLogId}`. This naturally enforces user ownership and simplifies security rules, as access is solely `request.auth.uid == userId`.\n    *   Shared data, like `ChatSession` (shared between a user and their assigned counselor), `CrisisIncident` (campus-wide safety information), `WcagAudit` (campus accessibility reports), `Campus` details, and `AccessibilityContent` (general accessible content), are maintained as top-level collections. Each document in these collections explicitly contains relevant authorization context (e.g., `userId`, `counselorId`, `campusId`) as direct fields, ensuring that rules do not need to traverse parent documents for access decisions.\n\n3.  **Access Modeling (Standardization and Consistency)**:\n    *   **Private Data**: `/users/{userId}` for user profiles and `/users/{userId}/moodLogs/{moodLogId}` for mood logs, clearly define path-based ownership.\n    *   **Collaborative Data**: `ChatSession` documents include `userId` and `counselorId` as explicit fields. Access is granted if `request.auth.uid` matches either of these, supporting the membership map concept for specific users involved in the collaboration.\n    *   **Global/Campus Roles (DBAC)**: As mentioned, dedicated collections like `/roles_admin/{userId}` are used for role-based access control, adhering to the \"Existence over Content\" principle.\n    *   **Campus-specific Shared Data**: `CrisisIncident` and `WcagAudit` collections store `campusId` directly within their documents, allowing rules to filter access based on the user's affiliated campus without complex `get()` operations on parent documents.\n\n4.  **QAPs (Rules are not Filters)**: The structure facilitates secure `list` operations:\n    *   **`MoodLog`**: Users can efficiently query and list `moodLogs` within their `/users/{userId}/moodLogs` subcollection, as ownership is implicit in the path.\n    *   **`ChatSession`**: Both users and counselors can perform `list` queries. A user queries `chatSessions` where `userId == request.auth.uid`. A counselor queries `chatSessions` where `counselorId == request.auth.uid`. Both are efficient single-collection queries on indexed fields.\n    *   **`CrisisIncident` / `WcagAudit` / `Campus` / `AccessibilityContent`**: These collections are designed for broader access. Authenticated users can `list` all documents, with potential client-side filtering by `campusId` or `status`. Security rules on these collections enforce write restrictions based on roles (checked via the new role collections).\n\nThis design prioritizes direct authorization fields within documents and uses dedicated role collections to achieve robust, atomic, and easily debuggable security rules, while also supporting efficient query patterns required by the application."
+  }
+}
