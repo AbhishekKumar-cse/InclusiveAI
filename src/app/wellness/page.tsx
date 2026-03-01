@@ -27,7 +27,7 @@ export default function WellnessPage() {
   const { user } = useUser();
   const db = useFirestore();
   const [messages, setMessages] = useState<any[]>([
-    { role: 'assistant', content: "Hi! I'm WellnessBot, your 24/7 wellbeing companion. I'm here to listen, support, and connect you with resources. Remember: I'm not a doctor, but I care about how you're doing. What's on your mind today?" }
+    { role: 'assistant', content: "Hi! I'm WellnessBot, your 24/7 wellbeing companion. I'm here to listen, support, and connect you with resources. What's on your mind today?" }
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -35,35 +35,39 @@ export default function WellnessPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Initialize session ID once
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (user && !sessionId) {
+      setSessionId(`wellness-${user.uid}-${Date.now()}`);
     }
-  }, [messages]);
+  }, [user, sessionId]);
 
-  // Initialize a chat session in Firestore if user is logged in
+  // Sync to Firestore when session ID or messages change
   useEffect(() => {
-    if (user && !sessionId && db) {
-      const newSessionId = `wellness-${user.uid}-${Date.now()}`;
-      setSessionId(newSessionId);
-      
-      const sessionRef = doc(db, "chatSessions", newSessionId);
+    if (user && db && sessionId) {
+      const sessionRef = doc(db, "chatSessions", sessionId);
       setDocumentNonBlocking(sessionRef, {
-        id: newSessionId,
+        id: sessionId,
         userId: user.uid,
         module: "wellness",
-        messages: [{
-          role: "assistant",
-          content: messages[0].content,
-          timestamp: new Date().toISOString()
-        }],
-        riskLevel: "low",
-        humanHandoffTriggered: false,
+        messages: messages.map(m => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp || new Date().toISOString()
+        })),
+        riskLevel: riskLevel > 70 ? "high" : riskLevel > 30 ? "medium" : "low",
+        humanHandoffTriggered: riskLevel >= 71,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       }, { merge: true });
     }
-  }, [user, db, sessionId, messages]);
+  }, [user, db, sessionId, messages, riskLevel]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isLoading]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -73,17 +77,8 @@ export default function WellnessPage() {
     setIsLoading(true);
 
     const userMsgObj = { role: 'user', content: userMessage, timestamp: new Date().toISOString() };
-    const newMessages = [...messages, userMsgObj];
-    setMessages(newMessages);
-
-    // Sync user message to Firestore
-    if (sessionId && db) {
-      const sessionRef = doc(db, "chatSessions", sessionId);
-      updateDocumentNonBlocking(sessionRef, {
-        messages: arrayUnion(userMsgObj),
-        updatedAt: serverTimestamp()
-      });
-    }
+    const historyBeforeResponse = [...messages, userMsgObj];
+    setMessages(historyBeforeResponse);
 
     try {
       const response = await chatWithWellnessBot({
@@ -100,31 +95,19 @@ export default function WellnessPage() {
         flaggedForReview: response.flaggedForReview
       };
       
-      setMessages([...newMessages, assistantMsgObj]);
+      setMessages(prev => [...prev, assistantMsgObj]);
       setRiskLevel(response.newRiskScore);
 
-      // Log interaction and mood log to Firestore
-      if (user && db) {
-        // Sync assistant response to Firestore
-        if (sessionId) {
-          const sessionRef = doc(db, "chatSessions", sessionId);
-          updateDocumentNonBlocking(sessionRef, {
-            messages: arrayUnion(assistantMsgObj),
-            riskLevel: response.newRiskScore > 70 ? "high" : response.newRiskScore > 30 ? "medium" : "low",
-            humanHandoffTriggered: response.humanHandoffTriggered,
-            updatedAt: serverTimestamp()
-          });
-        }
-
-        // Create a MoodLog entry
+      // Log Mood Log entry for high-risk detection
+      if (user && db && response.newRiskScore > 30) {
         const moodLogId = `log-${Date.now()}`;
         const moodLogRef = doc(db, "users", user.uid, "moodLogs", moodLogId);
         setDocumentNonBlocking(moodLogRef, {
           id: moodLogId,
           userId: user.uid,
           date: new Date().toISOString().split('T')[0],
-          moodScore: response.newRiskScore > 70 ? 1 : response.newRiskScore > 30 ? 3 : 5,
-          moodEmoji: response.newRiskScore > 70 ? '😢' : response.newRiskScore > 30 ? '😐' : '😊',
+          moodScore: response.newRiskScore > 70 ? 1 : 3,
+          moodEmoji: response.newRiskScore > 70 ? '😢' : '😐',
           note: userMessage,
           aiNudgeSent: true,
           nudgeContent: response.aiResponse,
@@ -134,15 +117,15 @@ export default function WellnessPage() {
 
       if (response.humanHandoffTriggered) {
         toast({
-          title: "Crisis Support Triggered",
-          description: "A counselor has been notified and will join shortly.",
+          title: "Support Notification",
+          description: "A counselor has been notified to provide extra support.",
           variant: "destructive"
         });
       }
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to connect to WellnessBot. Please try again.",
+        title: "Connection Issue",
+        description: "WellnessBot is experiencing heavy traffic. Please try again in a moment.",
         variant: "destructive"
       });
     } finally {
@@ -159,17 +142,17 @@ export default function WellnessPage() {
             <div className="w-10 h-10 bg-wellness-purple rounded-full flex items-center justify-center text-xl">💚</div>
             <div>
               <h1 className="font-headline font-bold">WellnessBot</h1>
-              <p className="text-[10px] text-muted-foreground">Online · Human Oversight Enabled</p>
+              <p className="text-[10px] text-muted-foreground">Online · AI Companion</p>
             </div>
           </div>
           <Button variant="destructive" className="bg-crisis-red hover:bg-crisis-red/90 h-9 rounded-full px-6 flex gap-2">
-            <AlertTriangle size={16} /> 🚨 I need help now
+            <AlertTriangle size={16} /> I need help now
           </Button>
         </header>
 
         <div className="flex-1 flex overflow-hidden">
           {/* Mood Tracking Sidebar (Left) */}
-          <div className="hidden lg:flex w-80 border-r border-border/10 p-6 flex-col gap-6 overflow-y-auto">
+          <div className="hidden lg:flex w-80 border-r border-border/10 p-6 flex flex-col gap-6 overflow-y-auto">
             <section className="space-y-4">
               <h3 className="font-headline font-bold text-lg">Daily Check-in</h3>
               <div className="grid grid-cols-5 gap-2">
@@ -199,10 +182,10 @@ export default function WellnessPage() {
               <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Campus Help</h3>
               <div className="space-y-2">
                 <Button variant="ghost" className="w-full justify-start gap-3 h-12 text-sm">
-                  <Building2 size={16} className="text-access-blue" /> Student Health Center
+                  <Building2 size={16} className="text-access-blue" /> Health Center
                 </Button>
                 <Button variant="ghost" className="w-full justify-start gap-3 h-12 text-sm">
-                  <Phone size={16} className="text-safe-green" /> 24hr Campus Helpline
+                  <Phone size={16} className="text-safe-green" /> Campus Helpline
                 </Button>
               </div>
             </section>
@@ -212,7 +195,7 @@ export default function WellnessPage() {
           <div className="flex-1 flex flex-col bg-surface-dark/30">
             <div className="p-4 glass border-b border-border/20 flex items-center gap-3">
               <Info className="text-access-blue w-4 h-4 shrink-0" />
-              <p className="text-xs text-muted-foreground">WellnessBot is an AI assistant. For emergencies, please use the button above or contact professional services.</p>
+              <p className="text-xs text-muted-foreground">WellnessBot is an AI assistant. For clinical help, please contact health services.</p>
             </div>
             
             <div ref={scrollRef} className="flex-1 p-6 overflow-y-auto space-y-6 scroll-smooth">
@@ -242,9 +225,9 @@ export default function WellnessPage() {
                 <div className="bg-crisis-red/20 border border-crisis-red/30 p-6 rounded-2xl space-y-4">
                   <div className="flex items-center gap-3 text-crisis-red">
                     <AlertTriangle />
-                    <h4 className="font-bold">We care about your safety</h4>
+                    <h4 className="font-bold">Safety Support</h4>
                   </div>
-                  <p className="text-sm">It sounds like you might be going through something really difficult. A trained counselor has been notified and will join this conversation shortly.</p>
+                  <p className="text-sm">It sounds like you're going through a lot. We've notified support services to assist you.</p>
                   <div className="grid grid-cols-2 gap-2">
                     <Button variant="outline" className="text-xs h-10 border-crisis-red/30">Call Helpline</Button>
                     <Button variant="outline" className="text-xs h-10 border-crisis-red/30">Crisis Text Line</Button>
@@ -277,40 +260,6 @@ export default function WellnessPage() {
                 </Button>
               </div>
             </div>
-          </div>
-
-          {/* Resources Sidebar (Right) */}
-          <div className="hidden xl:flex w-80 border-l border-border/10 p-6 flex-col gap-6 overflow-y-auto">
-             <section className="space-y-4">
-              <h3 className="font-headline font-bold text-lg flex items-center gap-2">
-                <Sparkles size={20} className="text-accent" /> Daily Nudge
-              </h3>
-              <Card className="glass border-accent/20 bg-accent/5">
-                <CardContent className="p-4 space-y-3">
-                  <p className="text-sm leading-relaxed italic">"Take a deep breath and acknowledge one small win you achieved today. Even the smallest step is progress."</p>
-                  <Badge variant="outline" className="text-[10px] text-accent border-accent/30">Mindfulness</Badge>
-                </CardContent>
-              </Card>
-            </section>
-
-            <section className="space-y-4">
-              <h3 className="font-headline font-bold text-lg">Peer Circles</h3>
-              <div className="space-y-3">
-                {[
-                  { name: "Exam Season Support", members: 12, time: "Tomorrow 5PM" },
-                  { name: "First-Gen Connect", members: 8, time: "Wed 3PM" }
-                ].map((c, i) => (
-                  <div key={i} className="glass p-4 rounded-xl space-y-2">
-                    <p className="text-sm font-bold">{c.name}</p>
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>{c.members} Members</span>
-                      <span>{c.time}</span>
-                    </div>
-                    <Button variant="ghost" size="sm" className="w-full h-7 text-[10px] hover:bg-primary/20">Join Circle</Button>
-                  </div>
-                ))}
-              </div>
-            </section>
           </div>
         </div>
       </main>

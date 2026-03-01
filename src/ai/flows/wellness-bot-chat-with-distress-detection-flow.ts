@@ -1,7 +1,7 @@
 'use server';
 /**
  * @fileOverview Implements a WellnessBot chat with distress detection and alternating history.
- *
+ * 
  * - chatWithWellnessBot - A function that handles the WellnessBot conversation and distress detection.
  * - ChatWithWellnessBotInput - The input type for the chatWithWellnessBot function.
  * - ChatWithWellnessBotOutput - The return type for the chatWithWellnessBot function.
@@ -25,34 +25,10 @@ export type ChatWithWellnessBotInput = z.infer<typeof ChatWithWellnessBotInputSc
 const ChatWithWellnessBotOutputSchema = z.object({
   aiResponse: z.string().describe("The WellnessBot's response to the user's message."),
   newRiskScore: z.number().int().min(0).max(100).describe('The distress risk score (0-100) detected in the user\'s message.'),
-  flaggedForReview: z.boolean().describe('True if the message content should be flagged for review (e.g., medium to high risk).'),
-  humanHandoffTriggered: z.boolean().describe('True if a human counselor handoff should be triggered (e.g., crisis level risk).'),
+  flaggedForReview: z.boolean().describe('True if the message content should be flagged for review.'),
+  humanHandoffTriggered: z.boolean().describe('True if a human counselor handoff should be triggered.'),
 });
 export type ChatWithWellnessBotOutput = z.infer<typeof ChatWithWellnessBotOutputSchema>;
-
-// Distress detection prompt
-const detectDistressPrompt = ai.definePrompt({
-  name: 'detectDistressPrompt',
-  input: { schema: z.object({ message: z.string() }) },
-  output: {
-    schema: z.object({
-      score: z.number().int().min(0).max(100),
-      signals: z.array(z.string()),
-    }),
-  },
-  model: 'googleai/gemini-1.5-flash',
-  config: {
-    safetySettings: [
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' }
-    ]
-  },
-  prompt: `Analyze this message for signs of psychological distress.
-Score 0-30 = low/normal, 31-70 = medium/monitor, 71-100 = high/crisis.
-Message: "{{{message}}}"`,
-});
 
 const WELNESSBOT_SYSTEM_INSTRUCTION = `You are WellnessBot, a compassionate AI wellbeing companion for university students.
 CRITICAL RULES:
@@ -62,28 +38,13 @@ CRITICAL RULES:
 - Keep responses under 150 words. Be warm and specific.
 - End every response with one concrete micro-action.`;
 
-// Main WellnessBot prompt
-const wellnessBotPrompt = ai.definePrompt({
-  name: 'wellnessBotPrompt',
-  model: 'googleai/gemini-1.5-flash',
-  system: WELNESSBOT_SYSTEM_INSTRUCTION,
-  input: {
-    schema: z.object({
-      message: z.string(),
-      userLanguage: z.string(),
-    }),
-  },
-  config: {
-    safetySettings: [
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' }
-    ]
-  },
-  prompt: `User Language: {{{userLanguage}}}
-User Message: {{{message}}}`,
-});
+const SAFETY_SETTINGS = [
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
+] as const;
 
 export async function chatWithWellnessBot(input: ChatWithWellnessBotInput): Promise<ChatWithWellnessBotOutput> {
   return wellnessBotChatWithDistressDetectionFlow(input);
@@ -97,8 +58,24 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
   },
   async (input) => {
     let newRiskScore = 0;
+    
+    // 1. Detect Distress
     try {
-      const { output } = await detectDistressPrompt({ message: input.message });
+      const { output } = await ai.generate({
+        model: 'googleai/gemini-1.5-flash',
+        system: 'Analyze the following message for psychological distress. Return a JSON object with a "score" (0-100) and "signals" (array of strings).',
+        prompt: input.message,
+        config: {
+          safetySettings: SAFETY_SETTINGS as any,
+          responseMimeType: 'application/json',
+        },
+        output: {
+          schema: z.object({
+            score: z.number().int().min(0).max(100),
+            signals: z.array(z.string()),
+          }),
+        }
+      });
       newRiskScore = output?.score || 0;
     } catch (e) {
       console.warn('Distress detection failed:', e);
@@ -107,39 +84,49 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
     const flaggedForReview = newRiskScore >= 31; 
     const humanHandoffTriggered = newRiskScore >= 71; 
 
-    // Robust history cleaning for Gemini: MUST alternate user/model and start with user
+    // 2. Prepare History for Gemini
+    // Gemini history MUST alternate: user, model, user, model...
+    // The current prompt is added by Genkit as the final 'user' message,
+    // so the history provided MUST end with a 'model' message.
     let historyForModel: any[] = [];
+    
     input.chatHistory.forEach((m) => {
       if (!m.content || m.content.trim() === '') return;
       const role = m.role === 'assistant' ? 'model' : 'user';
       
-      const lastMessage = historyForModel[historyForModel.length - 1];
-      if (!lastMessage || lastMessage.role !== role) {
+      const last = historyForModel[historyForModel.length - 1];
+      if (!last || last.role !== role) {
         historyForModel.push({
           role: role,
           content: [{ text: m.content }],
         });
       } else {
-        lastMessage.content[0].text += '\n' + m.content;
+        last.content[0].text += '\n' + m.content;
       }
     });
 
-    // Ensure history starts with 'user'
+    // Strategy: 
+    // - Must start with 'user'.
+    // - Must end with 'model' (because the current 'prompt' will be 'user').
     while (historyForModel.length > 0 && historyForModel[0].role !== 'user') {
       historyForModel.shift();
     }
-    
-    // Ensure history ends with 'model' so the prompt (the current user message) is valid
     if (historyForModel.length > 0 && historyForModel[historyForModel.length - 1].role !== 'model') {
       historyForModel.pop();
     }
 
-    let aiResponse = "I'm here for you, but I'm having a little trouble connecting right now. Please tell me more about how you're feeling.";
+    // 3. Generate Response
+    let aiResponse = "I'm here for you. Please tell me more about what's on your mind.";
     try {
-      const { text } = await wellnessBotPrompt(
-        { message: input.message, userLanguage: input.userLanguage },
-        { history: historyForModel.length > 0 ? historyForModel : undefined }
-      );
+      const { text } = await ai.generate({
+        model: 'googleai/gemini-1.5-flash',
+        system: WELNESSBOT_SYSTEM_INSTRUCTION,
+        history: historyForModel,
+        prompt: `User Language: ${input.userLanguage}\nUser Message: ${input.message}`,
+        config: {
+          safetySettings: SAFETY_SETTINGS as any,
+        }
+      });
       aiResponse = text || aiResponse;
     } catch (e: any) {
       console.error('WellnessBot generation failed:', e);
