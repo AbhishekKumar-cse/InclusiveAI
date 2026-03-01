@@ -41,6 +41,14 @@ const detectDistressPrompt = ai.definePrompt({
   input: { schema: z.object({ message: z.string() }) },
   output: { schema: DistressDetectionOutputSchema },
   model: 'googleai/gemini-1.5-flash',
+  config: {
+    safetySettings: [
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' }
+    ]
+  },
   prompt: `Analyze this message for signs of psychological distress.
 Output ONLY a JSON object: { "score": 0-100, "signals": ["signal1", "signal2"] }
 Score 0-30 = low/normal, 31-70 = medium/monitor, 71-100 = high/crisis.
@@ -70,27 +78,43 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
   },
   async (input) => {
     // Step 1: Detect distress in the user's message using Gemini 1.5 Flash
-    const distressResult = await detectDistressPrompt({ message: input.message });
-    const newRiskScore = distressResult.output?.score || 0;
+    let newRiskScore = 0;
+    try {
+      const distressResult = await detectDistressPrompt({ message: input.message });
+      newRiskScore = distressResult.output?.score || 0;
+    } catch (e) {
+      console.warn('Distress detection failed or was blocked:', e);
+    }
+    
     const flaggedForReview = newRiskScore >= 31; 
     const humanHandoffTriggered = newRiskScore >= 71; 
 
     // Step 2: Prepare chat history for WellnessBot
     // IMPORTANT: Gemini history must alternate between user and model, starting with user.
-    // We filter history to ensure it's valid for the model.
-    let historyForModel = input.chatHistory.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
+    let historyForModel: any[] = [];
+    
+    // Process history to ensure it's valid for Gemini (alternating user/model)
+    input.chatHistory.forEach((m) => {
+      const role = m.role === 'assistant' ? 'model' : 'user';
+      const lastMessage = historyForModel[historyForModel.length - 1];
+      
+      // Only push if it's alternating
+      if (!lastMessage || lastMessage.role !== role) {
+        historyForModel.push({
+          role: role,
+          parts: [{ text: m.content }],
+        });
+      }
+    });
 
-    // Slicing out initial assistant greeting if it exists, to ensure history starts with 'user'
+    // Ensure history starts with 'user'
     if (historyForModel.length > 0 && historyForModel[0].role === 'model') {
       historyForModel = historyForModel.slice(1);
     }
 
-    // Step 3: Get WellnessBot's response using Gemini 1.5 Pro
+    // Step 3: Get WellnessBot's response
     const aiResponseGen = await ai.generate({
-      model: 'googleai/gemini-1.5-pro',
+      model: 'googleai/gemini-1.5-flash',
       system: WELNESSBOT_SYSTEM_INSTRUCTION,
       history: historyForModel,
       prompt: input.message,
@@ -103,7 +127,8 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
         ]
       }
     });
-    const aiResponse = aiResponseGen.text || '';
+    
+    const aiResponse = aiResponseGen.text || "I'm here for you, but I'm having a little trouble connecting right now. Please tell me more about how you're feeling.";
 
     return {
       aiResponse,
