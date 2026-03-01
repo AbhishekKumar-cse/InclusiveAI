@@ -1,10 +1,10 @@
 'use server';
 /**
- * @fileOverview Implements a WellnessBot chat with distress detection and robust history handling.
+ * @fileOverview Implements a WellnessBot chat with strict history formatting for Gemini compatibility.
  * 
- * - chatWithWellnessBot - Handles conversation with strict history role alternation for Gemini.
- * - ChatWithWellnessBotInput - Input schema including current message and history.
- * - ChatWithWellnessBotOutput - Output including AI response and risk scores.
+ * - chatWithWellnessBot - Main entry point for the chat flow.
+ * - ChatWithWellnessBotInput - Standard input schema with message and history.
+ * - ChatWithWellnessBotOutput - Structured output with AI response and safety scores.
  */
 
 import { ai } from '@/ai/genkit';
@@ -30,7 +30,7 @@ const ChatWithWellnessBotOutputSchema = z.object({
 });
 export type ChatWithWellnessBotOutput = z.infer<typeof ChatWithWellnessBotOutputSchema>;
 
-const WELNESSBOT_SYSTEM_INSTRUCTION = `You are WellnessBot, a compassionate AI wellbeing companion for university students.
+const WELLNESSBOT_SYSTEM_INSTRUCTION = `You are WellnessBot, a compassionate AI wellbeing companion for university students.
 CRITICAL RULES:
 - You are NOT a doctor. Never diagnose or prescribe.
 - If asked about medication, say: "Please consult a qualified healthcare professional."
@@ -38,6 +38,7 @@ CRITICAL RULES:
 - Keep responses under 150 words. Be warm and specific.
 - End every response with one concrete micro-action.`;
 
+// Safety settings that are permissive enough for mental health context while remaining safe
 const SAFETY_SETTINGS = [
   { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
   { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -57,76 +58,72 @@ const wellnessBotChatWithDistressDetectionFlow = ai.defineFlow(
     outputSchema: ChatWithWellnessBotOutputSchema,
   },
   async (input) => {
+    // 1. Distress Detection
     let newRiskScore = 0;
-    
-    // 1. Detect Distress (Using a separate clean call)
     try {
-      const { output } = await ai.generate({
+      const response = await ai.generate({
         model: 'googleai/gemini-1.5-flash',
-        system: 'Analyze message for psychological distress. Return JSON: {"score": 0-100, "signals": []}',
+        system: 'You are a psychological distress detector. Analyze the input message for signs of crisis, self-harm, or severe depression. Respond ONLY with a JSON object: {"score": number from 0 to 100}',
         prompt: input.message,
         config: {
           safetySettings: SAFETY_SETTINGS as any,
           responseMimeType: 'application/json',
-        },
-        output: {
-          schema: z.object({
-            score: z.number(),
-            signals: z.array(z.string()),
-          }),
         }
       });
+      const output = response.output as any;
       newRiskScore = output?.score || 0;
     } catch (e) {
       console.warn('Distress detection failed:', e);
     }
-    
-    const flaggedForReview = newRiskScore >= 31; 
-    const humanHandoffTriggered = newRiskScore >= 71; 
 
-    // 2. Clean History for Gemini
-    // Rules: Must start with 'user', must alternate user/model, must end with 'model' if prompt is 'user'.
-    const processedHistory: any[] = [];
+    const flaggedForReview = newRiskScore >= 31;
+    const humanHandoffTriggered = newRiskScore >= 71;
+
+    // 2. Prepare History for Gemini
+    // Gemini rules: Must start with 'user', must alternate 'user'/'model'.
+    // If our history starts with an assistant greeting, we must skip it or prepend a dummy user message.
+    // We choose to start the history from the first user message.
+    const messages: any[] = [];
     
-    input.chatHistory.forEach((m) => {
-      if (!m.content || m.content.trim() === '') return;
-      const role = m.role === 'assistant' ? 'model' : 'user';
+    input.chatHistory.forEach((msg) => {
+      const role = msg.role === 'assistant' ? 'model' : 'user';
+      // Only push if it's a valid part of an alternating sequence starting with user
+      if (messages.length === 0 && role !== 'user') return; // Skip initial model/system messages
       
-      const last = processedHistory[processedHistory.length - 1];
-      if (!last || last.role !== role) {
-        processedHistory.push({
-          role: role,
-          content: [{ text: m.content }],
-        });
+      const last = messages[messages.length - 1];
+      if (last && last.role === role) {
+        last.content[0].text += `\n${msg.content}`;
       } else {
-        last.content[0].text += '\n' + m.content;
+        messages.push({
+          role,
+          content: [{ text: msg.content }]
+        });
       }
     });
 
-    // Aggressively ensure Gemini format
-    while (processedHistory.length > 0 && processedHistory[0].role !== 'user') {
-      processedHistory.shift();
-    }
-    while (processedHistory.length > 0 && processedHistory[processedHistory.length - 1].role !== 'model') {
-      processedHistory.pop();
+    // Final check: if history is not empty, ensure it ends with 'model' so current 'user' prompt is next
+    while (messages.length > 0 && messages[messages.length - 1].role !== 'model') {
+      messages.pop();
     }
 
     // 3. Generate Main Response
-    let aiResponse = "I'm here for you. Please tell me more about what's on your mind.";
+    let aiResponse = "I'm here for you. I'm listening—can you tell me more about how you're feeling?";
     try {
-      const { text } = await ai.generate({
+      const response = await ai.generate({
         model: 'googleai/gemini-1.5-flash',
-        system: WELNESSBOT_SYSTEM_INSTRUCTION,
-        history: processedHistory,
-        prompt: `User Language: ${input.userLanguage}\n\n${input.message}`,
+        system: WELLNESSBOT_SYSTEM_INSTRUCTION,
+        history: messages,
+        prompt: `User Language: ${input.userLanguage}\n\nMessage: ${input.message}`,
         config: {
           safetySettings: SAFETY_SETTINGS as any,
         }
       });
-      if (text) aiResponse = text;
+      
+      if (response.text) {
+        aiResponse = response.text;
+      }
     } catch (e: any) {
-      console.error('WellnessBot generation failed:', e);
-      // We keep the default aiResponse if generation fails
+      console.error('WellnessBot response generation failed:', e);
     }
 
     return {
